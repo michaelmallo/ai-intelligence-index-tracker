@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateFrontier, filterModels, sortVendors, type Model } from './model-data'
+import { calculateFrontier, dateValue, filterModels, sortVendors, type Model } from './model-data'
 
 const models: Model[] = [
   { vendor: 'A', name: 'first', score: 50, releaseDate: '2024-01-01' },
@@ -22,6 +22,12 @@ describe('calculateFrontier', () => {
 
   it('starts each filtered frontier at its first score', () => {
     expect(calculateFrontier(models.filter((model) => model.vendor === 'B')).map((model) => model.name)).toEqual(['same score', 'lower later'])
+  })
+})
+
+describe('dateValue', () => {
+  it('converts release dates into sortable timestamps', () => {
+    expect(dateValue('2024-01-01')).toBeLessThan(dateValue('2024-02-01'))
   })
 })
 
