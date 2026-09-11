@@ -1,24 +1,17 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 
 const apiKey = process.env.ARTIFICIAL_ANALYSIS_API_KEY
-const apiUrl = 'https://artificialanalysis.ai/api/v2/language/models'
+const apiUrl = 'https://artificialanalysis.ai/api/v2/language/models/free'
 const outputPath = 'public/models.json'
-const countryNames = {
-  ca: 'Canada', cn: 'China', de: 'Germany', fr: 'France', gb: 'United Kingdom',
-  il: 'Israel', jp: 'Japan', kr: 'South Korea', us: 'United States',
-}
 
 if (!apiKey) throw new Error('ARTIFICIAL_ANALYSIS_API_KEY is required')
 
 function normalizeModel(model) {
-  const countryCode = typeof model.model_creator?.country === 'string' ? model.model_creator.country.toLowerCase() : ''
   return {
     vendor: model.model_creator.name,
     name: model.name,
     score: model.evaluations.artificial_analysis_intelligence_index,
     releaseDate: model.release_date,
-    openness: model.licensing.is_open_weights ? 'Open weights' : 'Closed',
-    country: countryNames[countryCode] ?? (countryCode ? countryCode.toUpperCase() : 'Unknown'),
   }
 }
 
@@ -26,9 +19,7 @@ function isUsableModel(model) {
   return typeof model?.name === 'string' &&
     /^\d{4}-\d{2}-\d{2}$/.test(model.release_date) &&
     typeof model.model_creator?.name === 'string' &&
-    typeof model.model_creator?.country === 'string' &&
-    typeof model.evaluations?.artificial_analysis_intelligence_index === 'number' &&
-    typeof model.licensing?.is_open_weights === 'boolean'
+    typeof model.evaluations?.artificial_analysis_intelligence_index === 'number'
 }
 
 const models = []
@@ -41,7 +32,18 @@ while (page <= totalPages) {
     headers: { accept: 'application/json', 'x-api-key': apiKey },
     cache: 'no-store',
   })
-  if (!response.ok) throw new Error(`Artificial Analysis API returned ${response.status} on page ${page}`)
+  if (!response.ok) {
+    let detail = ''
+    try {
+      const errorPayload = await response.json()
+      detail = typeof errorPayload.error === 'string' ? `: ${errorPayload.error}` : ''
+    } catch {
+      detail = ''
+    }
+    if (response.status === 401) throw new Error(`Artificial Analysis rejected the API key with HTTP 401${detail}. Check the ARTIFICIAL_ANALYSIS_API_KEY GitHub secret.`)
+    if (response.status === 403) throw new Error(`Artificial Analysis denied access with HTTP 403${detail}. Check that the API key is active.`)
+    throw new Error(`Artificial Analysis API returned ${response.status} on page ${page}${detail}`)
+  }
 
   const payload = await response.json()
   if (!Array.isArray(payload.data)) throw new Error(`Invalid Artificial Analysis response on page ${page}`)
