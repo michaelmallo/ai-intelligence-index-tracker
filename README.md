@@ -23,11 +23,17 @@ The three filters work together as one combined dataset filter:
 
 The chart recalculates the frontier from the filtered models. When all filters are set to **All**, the chart uses the full timeline represented in the current dataset. The interface also reports the current high score, the models included in the filtered view, the visible date range, and the latest frontier milestones.
 
-## Current data status
+## Data flow and privacy
 
-This branch contains an initial prototype snapshot with representative model records shaped around the Artificial Analysis leaderboard fields. It is intentionally structured so the static `models` collection in `src/App.tsx` can later be replaced by a data ingestion layer or API response.
+At application load, the browser makes one request to the static `models.json` artifact served by GitHub Pages. A scheduled GitHub Actions job requests all pages of the Artificial Analysis Data API language-model dataset, normalizes the required fields, validates the records, and publishes the result with the application. Filters and frontier calculations then run locally; changing a filter never contacts Artificial Analysis again.
 
-The intended source is the [Artificial Analysis Intelligence Index leaderboard](https://artificialanalysis.ai/leaderboards/models). The source should be checked before production use so the displayed scores, release dates, openness classifications, vendor metadata, and countries remain current and correctly attributed.
+GitHub Actions forwards the repository secret in the `x-api-key` header and never sends it to the browser. The generated data artifact is intentionally public because it is served by GitHub Pages; the API key itself is never stored in that artifact. The browser does not use cookies, localStorage, sessionStorage, or IndexedDB, and filter selections disappear when the page is closed or reloaded.
+
+The workflow follows the API's pagination rather than requesting individual model records. This minimizes source interactions while still obtaining the complete dataset required to construct the historical frontier. It runs hourly, so the published snapshot is refreshed without every visitor contacting Artificial Analysis. A new browser load obtains the latest successfully published snapshot.
+
+The app uses the documented [`/api/v2/language/models`](https://artificialanalysis.ai/data-api/docs) endpoint instead of scraping the public leaderboard page. The full model fields needed by this app, including model-creator country and licensing openness, require an eligible Artificial Analysis API tier. The free endpoint does not expose every field needed by the chart.
+
+The source's API terms require visible attribution, which is provided in the page footer. Use of the API remains subject to the [Artificial Analysis Terms of Use](https://artificialanalysis.ai/docs/legal/Terms-of-Use.pdf) and [Data Platform Terms](https://artificialanalysiscdn.com/legal/ProDataPlatformTerms.pdf).
 
 ## Technology
 
@@ -57,14 +63,32 @@ npm run build
 
 ## Project structure
 
-- `src/App.tsx` contains the prototype data shape, filtering logic, frontier calculation, chart, milestone list, and source citation.
+- `src/App.tsx` contains data loading, filtering logic, frontier calculation, chart, milestone list, and source citation.
+- `scripts/fetch-models.mjs` retrieves and normalizes all paginated Artificial Analysis model data for the Pages artifact.
+- `.github/workflows/deploy-pages.yml` refreshes the data hourly and deploys the static site.
+- `src/model-data.ts` contains the pure filtering and cumulative-frontier functions.
+- `src/model-data.test.ts` covers combined filters and increasing frontier behavior.
 - `src/App.css` contains the application layout and responsive visual styling.
 - `src/index.css` contains global typography and base styles.
+- `.env.example` documents the server-only API key configuration.
 
-## Next steps
+## GitHub Pages deployment
 
-1. Replace the prototype snapshot with a reliable, refreshed Artificial Analysis data source.
-2. Add data validation for missing or ambiguous metadata.
-3. Decide how historical score revisions should be versioned.
-4. Add automated tests for combined filtering and frontier calculation.
-5. Add loading, error, and stale-data states for the live data flow.
+The site is configured as a GitHub Pages project site at `https://michaelmallo.github.io/ai-intelligence-index-tracker/`.
+
+1. In repository **Settings → Pages**, set the source to **GitHub Actions**.
+2. In **Settings → Secrets and variables → Actions**, create the repository secret `ARTIFICIAL_ANALYSIS_API_KEY`.
+3. Push the workflow to `main` or `initial-prototype`, or start it manually from the Actions tab.
+
+The workflow uses the secret only while generating `public/models.json`, builds the app, and deploys the `dist` artifact. The generated JSON is ignored locally and is not committed to the repository.
+
+## Configuration
+
+For local data refreshes, copy `.env.example` to `.env` and run `npm run data:fetch`; `.env` is ignored by Git. This must remain server-side: do not rename the variable with a `VITE_` prefix or expose it in frontend code. GitHub Pages serves the generated model snapshot and never needs the API key at runtime.
+
+Run the quality checks with:
+
+```bash
+npm run test
+npm run build
+```

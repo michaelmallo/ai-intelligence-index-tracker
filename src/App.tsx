@@ -1,45 +1,58 @@
-import { useMemo, useState } from 'react'
-import { ArrowUpRight, CalendarDays, Database, SlidersHorizontal } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowUpRight, CalendarDays, Database, LoaderCircle, SlidersHorizontal } from 'lucide-react'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { calculateFrontier, filterModels, formatDate, type Model } from './model-data'
 import './App.css'
 
-type Model = { vendor: string; name: string; score: number; releaseDate: string; openness: 'Open weights' | 'Closed'; country: string }
+type DataResponse = { models: Model[]; indexVersion: number | null; retrievedAt: string }
+type DataState = { status: 'loading' | 'ready' | 'error'; models: Model[]; indexVersion: number | null; retrievedAt: string | null; error: string | null }
 
-const models: Model[] = [
-  { vendor: 'OpenAI', name: 'GPT-4o', score: 57, releaseDate: '2024-05-13', openness: 'Closed', country: 'United States' },
-  { vendor: 'Anthropic', name: 'Claude 3.5 Sonnet', score: 61, releaseDate: '2024-06-20', openness: 'Closed', country: 'United States' },
-  { vendor: 'Google', name: 'Gemini 1.5 Pro', score: 60, releaseDate: '2024-06-27', openness: 'Closed', country: 'United States' },
-  { vendor: 'Meta', name: 'Llama 3.1 405B', score: 64, releaseDate: '2024-07-23', openness: 'Open weights', country: 'United States' },
-  { vendor: 'OpenAI', name: 'o1-preview', score: 72, releaseDate: '2024-09-12', openness: 'Closed', country: 'United States' },
-  { vendor: 'DeepSeek', name: 'DeepSeek-V3', score: 68, releaseDate: '2024-12-26', openness: 'Open weights', country: 'China' },
-  { vendor: 'Anthropic', name: 'Claude 3.7 Sonnet', score: 78, releaseDate: '2025-02-24', openness: 'Closed', country: 'United States' },
-  { vendor: 'Google', name: 'Gemini 2.5 Pro', score: 84, releaseDate: '2025-03-25', openness: 'Closed', country: 'United States' },
-  { vendor: 'Moonshot AI', name: 'Kimi K2', score: 74, releaseDate: '2025-07-11', openness: 'Open weights', country: 'China' },
-  { vendor: 'OpenAI', name: 'GPT-5', score: 86, releaseDate: '2025-08-07', openness: 'Closed', country: 'United States' },
-]
+let modelsRequest: Promise<DataResponse> | undefined
 
-const allOption = 'All'
-const formatDate = (date: string) => new Intl.DateTimeFormat('en', { month: 'short', year: 'numeric' }).format(new Date(`${date}T12:00:00`))
+function loadModels(): Promise<DataResponse> {
+  modelsRequest ??= fetch('./models.json', { cache: 'no-store' }).then(async (response) => {
+    const payload = await response.json() as Partial<DataResponse> & { error?: string }
+    if (!response.ok) throw new Error(payload.error ?? 'Unable to load model data')
+    if (!Array.isArray(payload.models) || typeof payload.retrievedAt !== 'string') throw new Error('The data service returned an invalid response')
+    return payload as DataResponse
+  })
+  return modelsRequest
+}
 
 function App() {
-  const [vendor, setVendor] = useState(allOption)
-  const [country, setCountry] = useState(allOption)
-  const [openness, setOpenness] = useState(allOption)
-  const options = useMemo(() => ({ vendors: [allOption, ...new Set(models.map((model) => model.vendor))], countries: [allOption, ...new Set(models.map((model) => model.country))], openness: [allOption, ...new Set(models.map((model) => model.openness))] }), [])
-  const filteredModels = useMemo(() => models.filter((model) => (vendor === allOption || model.vendor === vendor) && (country === allOption || model.country === country) && (openness === allOption || model.openness === openness)), [country, openness, vendor])
-  const frontier = useMemo(() => { let highest = 0; return [...filteredModels].sort((a, b) => a.releaseDate.localeCompare(b.releaseDate)).filter((model) => { if (model.score <= highest) return false; highest = model.score; return true }).map((model) => ({ ...model, date: formatDate(model.releaseDate) })) }, [filteredModels])
+  const [data, setData] = useState<DataState>({ status: 'loading', models: [], indexVersion: null, retrievedAt: null, error: null })
+  const [vendor, setVendor] = useState('All')
+  const [country, setCountry] = useState('All')
+  const [openness, setOpenness] = useState('All')
+
+  useEffect(() => {
+    loadModels().then((result) => setData({ status: 'ready', models: result.models, indexVersion: result.indexVersion, retrievedAt: result.retrievedAt, error: null })).catch((error: unknown) => setData({ status: 'error', models: [], indexVersion: null, retrievedAt: null, error: error instanceof Error ? error.message : 'Unable to load model data' }))
+  }, [])
+
+  const options = useMemo(() => ({
+    vendors: ['All', ...new Set(data.models.map((model) => model.vendor))],
+    countries: ['All', ...new Set(data.models.map((model) => model.country))],
+    openness: ['All', ...new Set(data.models.map((model) => model.openness))],
+  }), [data.models])
+  const filteredModels = useMemo(() => filterModels(data.models, vendor, country, openness), [country, data.models, openness, vendor])
+  const frontier = useMemo(() => calculateFrontier(filteredModels), [filteredModels])
   const highest = frontier.at(-1)
-  const timelineStart = filteredModels[0]?.releaseDate
-  const timelineEnd = filteredModels.at(-1)?.releaseDate
+  const timelineModels = [...filteredModels].sort((a, b) => a.releaseDate.localeCompare(b.releaseDate))
+  const timelineStart = timelineModels[0]?.releaseDate
+  const timelineEnd = timelineModels.at(-1)?.releaseDate
 
   return (
     <main className="app-shell">
-      <header className="topbar"><div className="brand"><span className="brand-mark">AI</span><span>Intelligence Index</span></div><span className="status"><span className="status-dot" /> Prototype dataset</span></header>
-      <section className="intro"><p className="eyebrow">MODEL FRONTIER / 2024–2025</p><h1>How fast is the frontier moving?</h1><p className="lede">A living view of the highest intelligence index score reached over time.</p></section>
-      <section className="control-bar" aria-label="Chart filters"><div className="control-heading"><SlidersHorizontal size={17} /><span>Filter the frontier</span></div><div className="filters"><label>Vendor<select value={vendor} onChange={(event) => setVendor(event.target.value)}>{options.vendors.map((option) => <option key={option}>{option}</option>)}</select></label><label>Country<select value={country} onChange={(event) => setCountry(event.target.value)}>{options.countries.map((option) => <option key={option}>{option}</option>)}</select></label><label>Openness<select value={openness} onChange={(event) => setOpenness(event.target.value)}>{options.openness.map((option) => <option key={option}>{option}</option>)}</select></label></div></section>
-      <section className="chart-section"><div className="chart-header"><div><p className="section-kicker">CUMULATIVE FRONTIER</p><h2>Intelligence index over time</h2></div><div className="metric"><span>Current high</span><strong>{highest?.score ?? '—'}</strong><small>{highest?.name ?? 'No matching models'}</small></div></div><div className="chart-wrap">{frontier.length > 0 ? <ResponsiveContainer width="100%" height="100%"><LineChart data={frontier} margin={{ top: 20, right: 20, bottom: 10, left: 0 }}><CartesianGrid stroke="#dfe4e2" vertical={false} strokeDasharray="2 5" /><XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#6b7773', fontSize: 12 }} dy={10} /><YAxis domain={[40, 100]} axisLine={false} tickLine={false} tick={{ fill: '#6b7773', fontSize: 12 }} width={34} /><Tooltip content={({ active, payload }) => active && payload?.[0] ? <div className="tooltip"><strong>{payload[0].payload.score}</strong><span>{payload[0].payload.name}</span><small>{payload[0].payload.vendor} · {payload[0].payload.date}</small></div> : null} /><Line type="stepAfter" dataKey="score" stroke="#ef6351" strokeWidth={3} dot={{ r: 5, fill: '#f8f7f2', stroke: '#ef6351', strokeWidth: 3 }} activeDot={{ r: 7 }} /></LineChart></ResponsiveContainer> : <div className="empty-state">No models match these filters.</div>}</div><div className="chart-foot"><span><CalendarDays size={14} /> {timelineStart ? `${formatDate(timelineStart)} – ${formatDate(timelineEnd ?? timelineStart)}` : 'No timeline'}</span><span><Database size={14} /> {filteredModels.length} models in view</span></div></section>
-      <section className="frontier-list"><div><p className="section-kicker">MILESTONES</p><h2>Frontier breakthroughs</h2></div><div className="milestones">{frontier.slice(-3).reverse().map((model) => <article key={model.name}><span className="milestone-score">{model.score}</span><div><strong>{model.name}</strong><p>{model.vendor} · {model.date}</p></div></article>)}</div></section>
-      <footer>Data source: <a href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noreferrer">Artificial Analysis Intelligence Index <ArrowUpRight size={14} /></a><span>Prototype snapshot · scores and metadata will be refreshed from source</span></footer>
+      <header className="topbar"><div className="brand"><span className="brand-mark">AI</span><span>Intelligence Index</span></div><span className="status"><span className={`status-dot ${data.status}`} /> {data.status === 'ready' ? `Index v${data.indexVersion ?? '—'}` : data.status === 'loading' ? 'Loading data' : 'Data unavailable'}</span></header>
+      <section className="intro"><p className="eyebrow">MODEL FRONTIER {data.indexVersion ? `/ INDEX V${data.indexVersion}` : ''}</p><h1>How fast is the frontier moving?</h1><p className="lede">A living view of the highest intelligence index score reached over time.</p></section>
+      {data.status === 'loading' && <section className="data-message"><LoaderCircle className="spinner" size={20} /><span>Loading the latest model data...</span></section>}
+      {data.status === 'error' && <section className="data-message error"><strong>Model data could not be loaded.</strong><span>{data.error}</span><small>The scheduled GitHub data refresh may not have completed yet. Try again after the next deployment.</small></section>}
+      {data.status === 'ready' && <>
+        <section className="control-bar" aria-label="Chart filters"><div className="control-heading"><SlidersHorizontal size={17} /><span>Filter the frontier</span></div><div className="filters"><label>Vendor<select value={vendor} onChange={(event) => setVendor(event.target.value)}>{options.vendors.map((option) => <option key={option}>{option}</option>)}</select></label><label>Country<select value={country} onChange={(event) => setCountry(event.target.value)}>{options.countries.map((option) => <option key={option}>{option}</option>)}</select></label><label>Openness<select value={openness} onChange={(event) => setOpenness(event.target.value)}>{options.openness.map((option) => <option key={option}>{option}</option>)}</select></label></div></section>
+        <section className="chart-section"><div className="chart-header"><div><p className="section-kicker">CUMULATIVE FRONTIER</p><h2>Intelligence index over time</h2></div><div className="metric"><span>Current high</span><strong>{highest?.score ?? '—'}</strong><small>{highest?.name ?? 'No matching models'}</small></div></div><div className="chart-wrap">{frontier.length > 0 ? <ResponsiveContainer width="100%" height="100%"><LineChart data={frontier} margin={{ top: 20, right: 20, bottom: 10, left: 0 }}><CartesianGrid stroke="#dfe4e2" vertical={false} strokeDasharray="2 5" /><XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#6b7773', fontSize: 12 }} dy={10} /><YAxis domain={[40, 100]} axisLine={false} tickLine={false} tick={{ fill: '#6b7773', fontSize: 12 }} width={34} /><Tooltip content={({ active, payload }) => active && payload?.[0] ? <div className="tooltip"><strong>{payload[0].payload.score}</strong><span>{payload[0].payload.name}</span><small>{payload[0].payload.vendor} · {payload[0].payload.date}</small></div> : null} /><Line type="stepAfter" dataKey="score" stroke="#ef6351" strokeWidth={3} dot={{ r: 5, fill: '#f8f7f2', stroke: '#ef6351', strokeWidth: 3 }} activeDot={{ r: 7 }} /></LineChart></ResponsiveContainer> : <div className="empty-state">No models match these filters.</div>}</div><div className="chart-foot"><span><CalendarDays size={14} /> {timelineStart ? `${formatDate(timelineStart)} – ${formatDate(timelineEnd ?? timelineStart)}` : 'No timeline'}</span><span><Database size={14} /> {filteredModels.length} models in view</span></div></section>
+        <section className="frontier-list"><div><p className="section-kicker">MILESTONES</p><h2>Frontier breakthroughs</h2></div><div className="milestones">{frontier.slice(-3).reverse().map((model) => <article key={model.name}><span className="milestone-score">{model.score}</span><div><strong>{model.name}</strong><p>{model.vendor} · {model.date}</p></div></article>)}</div></section>
+      </>}
+      <footer><a className="source-citation" href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noreferrer"><span className="source-label">Data provided by</span><img className="source-logo" src="./artificial-analysis-logo.svg" alt="Artificial Analysis" /><ArrowUpRight size={14} /></a><span>{data.retrievedAt ? `Retrieved ${new Date(data.retrievedAt).toLocaleString()}` : 'Data is loaded once per page load; nothing is stored in the browser.'}</span></footer>
     </main>
   )
 }
