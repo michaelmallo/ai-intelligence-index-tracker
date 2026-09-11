@@ -31,7 +31,7 @@ GitHub Actions forwards the repository secret in the `x-api-key` header and neve
 
 The workflow follows the API's pagination rather than requesting individual model records. This minimizes source interactions while still obtaining the complete dataset required to construct the historical frontier. It runs hourly, so the published snapshot is refreshed without every visitor contacting Artificial Analysis. A new browser load obtains the latest successfully published snapshot.
 
-The app uses the documented [`/api/v2/language/models`](https://artificialanalysis.ai/data-api/docs) endpoint instead of scraping the public leaderboard page. The full model fields needed by this app, including model-creator country and licensing openness, require an eligible Artificial Analysis API tier. The free endpoint does not expose every field needed by the chart.
+The app uses the documented [`/api/v2/language/models`](https://artificialanalysis.ai/data-api/docs) endpoint instead of scraping the public leaderboard page. The full model fields needed by this app, including model-creator country and licensing openness, require an eligible Artificial Analysis Pro or Commercial API tier. The free endpoint does not expose every field needed by the chart, so the workflow reports a clear error rather than publishing incomplete filters when a free key is configured.
 
 The source's API terms require visible attribution, which is provided in the page footer. Use of the API remains subject to the [Artificial Analysis Terms of Use](https://artificialanalysis.ai/docs/legal/Terms-of-Use.pdf) and [Data Platform Terms](https://artificialanalysiscdn.com/legal/ProDataPlatformTerms.pdf).
 

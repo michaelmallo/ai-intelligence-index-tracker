@@ -41,7 +41,19 @@ while (page <= totalPages) {
     headers: { accept: 'application/json', 'x-api-key': apiKey },
     cache: 'no-store',
   })
-  if (!response.ok) throw new Error(`Artificial Analysis API returned ${response.status} on page ${page}`)
+  if (!response.ok) {
+    let detail = ''
+    try {
+      const errorPayload = await response.json()
+      detail = typeof errorPayload.error === 'string' ? `: ${errorPayload.error}` : ''
+    } catch {
+      detail = ''
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(`Artificial Analysis rejected the API key with HTTP ${response.status}${detail}. The full language-model endpoint requires an eligible Pro or Commercial key; free keys cannot provide the country and openness fields required by this app.`)
+    }
+    throw new Error(`Artificial Analysis API returned ${response.status} on page ${page}${detail}`)
+  }
 
   const payload = await response.json()
   if (!Array.isArray(payload.data)) throw new Error(`Invalid Artificial Analysis response on page ${page}`)
