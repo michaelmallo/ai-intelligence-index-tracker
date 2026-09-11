@@ -16,6 +16,7 @@ The chart displays the cumulative intelligence frontier rather than every model 
 The filter controls the dataset used by the chart:
 
 - **Vendor** selects a specific model provider or all providers.
+- **Order vendors by** controls the vendor list order: A-Z, Z-A, Current Best Index (decreasing), or Current Best Index (increasing). Current Best Index is the highest score currently available for each vendor.
 
 The chart recalculates the frontier from the vendor-filtered models. When the vendor filter is set to **All**, the chart uses the full timeline represented in the current dataset. The interface also reports the current high score, the models included in the filtered view, the visible date range, and the latest frontier milestones.
 
@@ -59,10 +60,10 @@ npm run build
 
 ## Project structure
 
-- `src/App.tsx` contains data loading, vendor filtering, frontier calculation, chart, milestone list, and source citation.
+- `src/App.tsx` contains data loading, vendor filtering and ordering, frontier calculation, chart, milestone list, and source citation.
 - `scripts/fetch-models.mjs` retrieves and normalizes all paginated Artificial Analysis model data for the Pages artifact.
 - `.github/workflows/deploy-pages.yml` refreshes the data hourly and deploys the static site.
-- `src/model-data.ts` contains the pure filtering and cumulative-frontier functions.
+- `src/model-data.ts` contains the pure filtering, vendor ordering, and cumulative-frontier functions.
 - `src/model-data.test.ts` covers combined filters and increasing frontier behavior.
 - `src/App.css` contains the application layout and responsive visual styling.
 - `src/index.css` contains global typography and base styles.
