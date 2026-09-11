@@ -8,20 +8,16 @@ The application presents a chart based on the Artificial Analysis Intelligence I
 - Model name
 - Intelligence Index score
 - Model release date
-- Openness, represented as open weights or closed
-- Country of origin
 
 ## Prototype behavior
 
 The chart displays the cumulative intelligence frontier rather than every model score. Models are sorted by release date, and a model appears as a frontier milestone only when its score exceeds the highest score reached previously. This produces an always-increasing step chart that answers the question: what was the best intelligence score available at each point in time?
 
-The three filters work together as one combined dataset filter:
+The filter controls the dataset used by the chart:
 
 - **Vendor** selects a specific model provider or all providers.
-- **Country** selects a country of origin or all countries.
-- **Openness** selects open weights, closed models, or all model types.
 
-The chart recalculates the frontier from the filtered models. When all filters are set to **All**, the chart uses the full timeline represented in the current dataset. The interface also reports the current high score, the models included in the filtered view, the visible date range, and the latest frontier milestones.
+The chart recalculates the frontier from the vendor-filtered models. When the vendor filter is set to **All**, the chart uses the full timeline represented in the current dataset. The interface also reports the current high score, the models included in the filtered view, the visible date range, and the latest frontier milestones.
 
 ## Data flow and privacy
 
@@ -31,9 +27,9 @@ GitHub Actions forwards the repository secret in the `x-api-key` header and neve
 
 The workflow follows the API's pagination rather than requesting individual model records. This minimizes source interactions while still obtaining the complete dataset required to construct the historical frontier. It runs hourly, so the published snapshot is refreshed without every visitor contacting Artificial Analysis. A new browser load obtains the latest successfully published snapshot.
 
-The app uses the documented [`/api/v2/language/models`](https://artificialanalysis.ai/data-api/docs) endpoint instead of scraping the public leaderboard page. The full model fields needed by this app, including model-creator country and licensing openness, require an eligible Artificial Analysis Pro or Commercial API tier. The free endpoint does not expose every field needed by the chart, so the workflow reports a clear error rather than publishing incomplete filters when a free key is configured.
+The app uses the documented [`/api/v2/language/models/free`](https://artificialanalysis.ai/data-api/docs) endpoint instead of scraping the public leaderboard page. The free endpoint provides every field used by this app: model vendor, model name, Intelligence Index score, and release date.
 
-The source's API terms require visible attribution, which is provided in the page footer. Use of the API remains subject to the [Artificial Analysis Terms of Use](https://artificialanalysis.ai/docs/legal/Terms-of-Use.pdf) and [Data Platform Terms](https://artificialanalysiscdn.com/legal/ProDataPlatformTerms.pdf).
+The source's API terms require visible attribution, which is provided in the page footer. Use of the API remains subject to the [Artificial Analysis Terms of Use](https://artificialanalysis.ai/docs/legal/Terms-of-Use.pdf).
 
 ## Technology
 
@@ -63,7 +59,7 @@ npm run build
 
 ## Project structure
 
-- `src/App.tsx` contains data loading, filtering logic, frontier calculation, chart, milestone list, and source citation.
+- `src/App.tsx` contains data loading, vendor filtering, frontier calculation, chart, milestone list, and source citation.
 - `scripts/fetch-models.mjs` retrieves and normalizes all paginated Artificial Analysis model data for the Pages artifact.
 - `.github/workflows/deploy-pages.yml` refreshes the data hourly and deploys the static site.
 - `src/model-data.ts` contains the pure filtering and cumulative-frontier functions.
