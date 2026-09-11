@@ -7,7 +7,7 @@ export type Model = {
 
 export type VendorOrder = 'A-Z' | 'Z-A' | 'Current Best Index (decreasing)' | 'Current Best Index (increasing)'
 
-export type FrontierPoint = Model & { date: string }
+export type FrontierPoint = Model & { date: string; dateValue: number }
 
 export function calculateFrontier(models: Model[]): FrontierPoint[] {
   let highest = -Infinity
@@ -19,11 +19,15 @@ export function calculateFrontier(models: Model[]): FrontierPoint[] {
       highest = model.score
       return true
     })
-    .map((model) => ({ ...model, date: formatDate(model.releaseDate) }))
+    .map((model) => ({ ...model, date: formatDate(model.releaseDate), dateValue: dateValue(model.releaseDate) }))
 }
 
 export function formatDate(date: string): string {
   return new Intl.DateTimeFormat('en', { month: 'short', year: 'numeric' }).format(new Date(`${date}T12:00:00`))
+}
+
+export function dateValue(date: string): number {
+  return new Date(`${date}T12:00:00`).getTime()
 }
 
 export function filterModels(models: Model[], vendor: string): Model[] {
