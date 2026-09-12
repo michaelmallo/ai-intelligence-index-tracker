@@ -26,7 +26,13 @@ function App() {
   const [allSelected, setAllSelected] = useState(true)
   const [selectedVendors, setSelectedVendors] = useState<string[]>([])
   const [vendorOrder, setVendorOrder] = useState<VendorOrder>('A-Z')
-  const [darkMode, setDarkMode] = useState(false)
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      return sessionStorage.getItem('theme') === 'dark'
+    } catch {
+      return false
+    }
+  })
   const [vendorMenuOpen, setVendorMenuOpen] = useState(false)
   const vendorMenuRef = useRef<HTMLDivElement>(null)
 
@@ -44,6 +50,10 @@ function App() {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark-mode', darkMode)
+    try {
+      sessionStorage.setItem('theme', darkMode ? 'dark' : 'light')
+    } catch {
+    }
     return () => document.documentElement.classList.remove('dark-mode')
   }, [darkMode])
 
