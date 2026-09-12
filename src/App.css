@@ -1,4 +1,6 @@
 #root { min-height: 100vh; }
+html, body { min-height: 100%; background: #f8f7f2; }
+html.dark-mode, html.dark-mode body, html.dark-mode #root { background: #182321; }
 .app-shell { --page-bg: #f8f7f2; --text: #24312e; --muted-text: #6b7773; --border: #dfe4e2; --panel: #f0f2ed; --chart-bg: #e7eee9; --chart-border: #d2dfd7; --chart-grid: #dfe4e2; --frontier-line: #24312e; position: relative; max-width: 1240px; min-height: 100vh; margin: 0 auto; padding: 0 24px 21px; color: var(--text); background: var(--page-bg); transition: background-color .2s, color .2s; }
 .app-shell.dark-mode { --page-bg: #182321; --text: #edf3ef; --muted-text: #a9b9b1; --border: #3a4a44; --panel: #22332e; --chart-bg: #263a34; --chart-border: #3c574c; --chart-grid: #3a4a44; --frontier-line: #edf3ef; }
 .theme-toggle { position: absolute; top: 14px; right: 24px; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--panel); color: var(--text); cursor: pointer; }
