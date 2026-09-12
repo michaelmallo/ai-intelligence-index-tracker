@@ -15,10 +15,10 @@ The chart displays the cumulative intelligence frontier rather than every model 
 
 The filter controls the dataset used by the chart:
 
-- **Vendor** opens a checkbox menu where one or two model providers can be selected. **All** clears specific selections and shows the combined frontier. Once two providers are selected, other providers are disabled until one selection is removed.
+- **Vendor** selects a specific model provider or all providers.
 - **Order vendors by** controls the vendor list order: A-Z, Z-A, Current Best Index (decreasing), or Current Best Index (increasing). Current Best Index is the highest score currently available for each vendor.
 
-The chart recalculates the frontier from the vendor-filtered models. When two providers are selected, it draws one colored frontier line per provider. When the vendor filter is set to **All**, the chart uses the full timeline represented in the current dataset. The interface also reports the current high score, the models included in the filtered view, the visible date range, and the latest frontier milestones.
+The chart recalculates the frontier from the vendor-filtered models. When the vendor filter is set to **All**, the chart uses the full timeline represented in the current dataset. The interface also reports the current high score, the models included in the filtered view, the visible date range, and the latest frontier milestones.
 
 ## Data flow and privacy
 
