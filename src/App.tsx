@@ -26,9 +26,19 @@ function App() {
   const [allSelected, setAllSelected] = useState(true)
   const [selectedVendors, setSelectedVendors] = useState<string[]>([])
   const [vendorOrder, setVendorOrder] = useState<VendorOrder>('A-Z')
+  const [vendorMenuOpen, setVendorMenuOpen] = useState(false)
+  const vendorMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadModels().then((result) => setData({ status: 'ready', models: result.models, indexVersion: result.indexVersion, retrievedAt: result.retrievedAt, error: null })).catch((error: unknown) => setData({ status: 'error', models: [], indexVersion: null, retrievedAt: null, error: error instanceof Error ? error.message : 'Unable to load model data' }))
+  }, [])
+
+  useEffect(() => {
+    function closeMenu(event: MouseEvent) {
+      if (vendorMenuRef.current && !vendorMenuRef.current.contains(event.target as Node)) setVendorMenuOpen(false)
+    }
+    document.addEventListener('mousedown', closeMenu)
+    return () => document.removeEventListener('mousedown', closeMenu)
   }, [])
 
   const options = useMemo(() => ({
