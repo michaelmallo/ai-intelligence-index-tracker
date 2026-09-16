@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateFrontier, dateValue, filterModels, sortVendors, type Model } from './model-data'
+import { buildFrontierChartData, calculateFrontier, dateValue, filterModels, getTodayDateString, sortVendors, type Model } from './model-data'
 
 const models: Model[] = [
   { vendor: 'A', name: 'first', score: 50, releaseDate: '2024-01-01' },
@@ -22,6 +22,41 @@ describe('calculateFrontier', () => {
 
   it('starts each filtered frontier at its first score', () => {
     expect(calculateFrontier(models.filter((model) => model.vendor === 'B')).map((model) => model.name)).toEqual(['same score', 'lower later'])
+  })
+})
+
+describe('buildFrontierChartData', () => {
+  it('returns empty array when frontier is empty', () => {
+    expect(buildFrontierChartData([])).toEqual([])
+  })
+
+  it('extends the highest score horizontally to the specified end date', () => {
+    const frontier = calculateFrontier(models)
+    const result = buildFrontierChartData(frontier, '2024-12-01')
+    expect(result).toEqual([
+      { x: dateValue('2024-01-01'), frontier: 50 },
+      { x: dateValue('2024-03-01'), frontier: 70 },
+      { x: dateValue('2024-12-01'), frontier: 70 },
+    ])
+  })
+
+  it('does not add redundant point if end date is equal to or before the last frontier point', () => {
+    const frontier = calculateFrontier(models)
+    const result = buildFrontierChartData(frontier, '2024-03-01')
+    expect(result).toEqual([
+      { x: dateValue('2024-01-01'), frontier: 50 },
+      { x: dateValue('2024-03-01'), frontier: 70 },
+    ])
+  })
+
+  it('defaults to extending to today if no end date is passed', () => {
+    const frontier = calculateFrontier(models)
+    const result = buildFrontierChartData(frontier)
+    const today = getTodayDateString()
+    expect(result.at(-1)).toEqual({
+      x: dateValue(today),
+      frontier: 70,
+    })
   })
 })
 
