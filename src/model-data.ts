@@ -49,3 +49,40 @@ export function sortVendors(models: Model[], order: VendorOrder): string[] {
     return left.localeCompare(right)
   })
 }
+
+export type FrontierChartPoint = {
+  x: number
+  frontier: number
+}
+
+export function getTodayDateString(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function buildFrontierChartData(
+  frontier: FrontierPoint[],
+  endDate: string = getTodayDateString(),
+): FrontierChartPoint[] {
+  if (frontier.length === 0) return []
+
+  const points: FrontierChartPoint[] = frontier.map((point) => ({
+    x: point.dateValue,
+    frontier: point.score,
+  }))
+
+  const lastPoint = frontier[frontier.length - 1]
+  const endValue = dateValue(endDate)
+
+  if (endValue > lastPoint.dateValue) {
+    points.push({
+      x: endValue,
+      frontier: lastPoint.score,
+    })
+  }
+
+  return points
+}
