@@ -22,9 +22,32 @@ export function calculateFrontier(models: Model[]): FrontierPoint[] {
     .map((model) => ({ ...model, date: formatDate(model.releaseDate), dateValue: dateValue(model.releaseDate) }))
 }
 
-export function formatDate(date: string): string {
-  return new Intl.DateTimeFormat('en', { month: 'short', year: 'numeric' }).format(new Date(`${date}T12:00:00`))
+export function formatDate(date: string | number): string {
+  const d = typeof date === 'number' ? new Date(date) : new Date(`${date}T12:00:00`)
+  return new Intl.DateTimeFormat('en', { month: 'short', year: 'numeric' }).format(d)
 }
+
+export function generateSemesterTicks(startDate: string, endDate: string): number[] {
+  const startVal = dateValue(startDate)
+  const endVal = dateValue(endDate)
+  if (Number.isNaN(startVal) || Number.isNaN(endVal) || startVal > endVal) return []
+
+  const startYear = new Date(`${startDate}T12:00:00`).getFullYear()
+  const endYear = new Date(`${endDate}T12:00:00`).getFullYear()
+  const ticks: number[] = []
+
+  for (let year = startYear; year <= endYear; year++) {
+    for (const semesterStart of [`${year}-01-01`, `${year}-07-01`]) {
+      const val = dateValue(semesterStart)
+      if (val >= startVal && val <= endVal) {
+        ticks.push(val)
+      }
+    }
+  }
+
+  return ticks
+}
+
 
 export function dateValue(date: string): number {
   return new Date(`${date}T12:00:00`).getTime()
