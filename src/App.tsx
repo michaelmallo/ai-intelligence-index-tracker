@@ -94,7 +94,7 @@ export function CustomChartTooltip({
       </div>
       {regressionValue !== null && (
         <div className="tooltip-row">
-          <span className="tooltip-label">Exponential regression curve:</span>
+          <span className="tooltip-label">Projection:</span>
           <span className="tooltip-value tooltip-regression" data-testid="tooltip-regression-value">{regressionValue}</span>
         </div>
       )}
