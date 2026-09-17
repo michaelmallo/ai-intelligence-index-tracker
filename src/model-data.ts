@@ -86,3 +86,91 @@ export function buildFrontierChartData(
 
   return points
 }
+
+export function addOneYear(dateString: string): string {
+  const date = new Date(`${dateString}T12:00:00`)
+  date.setFullYear(date.getFullYear() + 1)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export type ExponentialRegressionModel = {
+  predict: (dateVal: number) => number
+  a: number
+  b: number
+}
+
+const MS_PER_DAY = 86_400_000
+
+export function fitExponentialRegression(frontier: FrontierPoint[]): ExponentialRegressionModel | null {
+  const validPoints = frontier.filter((p) => p.score > 0)
+  if (validPoints.length < 2) return null
+
+  const x0 = validPoints[0].dateValue
+  const pts = validPoints.map((p) => ({
+    t: (p.dateValue - x0) / MS_PER_DAY,
+    lnY: Math.log(p.score),
+  }))
+
+  const n = pts.length
+  const meanT = pts.reduce((sum, p) => sum + p.t, 0) / n
+  const meanLnY = pts.reduce((sum, p) => sum + p.lnY, 0) / n
+
+  let num = 0
+  let den = 0
+  for (const p of pts) {
+    const dt = p.t - meanT
+    num += dt * (p.lnY - meanLnY)
+    den += dt * dt
+  }
+
+  if (den === 0) return null
+
+  const b = num / den
+  const alpha = meanLnY - b * meanT
+  const a = Math.exp(alpha)
+
+  return {
+    a,
+    b,
+    predict: (dateVal: number) => {
+      const t = (dateVal - x0) / MS_PER_DAY
+      return Math.exp(alpha + b * t)
+    },
+  }
+}
+
+export type RegressionChartPoint = {
+  x: number
+  regression: number
+}
+
+export function generateRegressionPoints(
+  frontier: FrontierPoint[],
+  startDate: string,
+  endDate: string,
+  numPoints: number = 80,
+): RegressionChartPoint[] {
+  const model = fitExponentialRegression(frontier)
+  if (!model) return []
+
+  const startVal = dateValue(startDate)
+  const endVal = dateValue(endDate)
+  if (startVal >= endVal) return []
+
+  const points: RegressionChartPoint[] = []
+  const step = (endVal - startVal) / (numPoints - 1)
+
+  for (let i = 0; i < numPoints; i++) {
+    const x = Math.round(startVal + i * step)
+    const val = model.predict(x)
+    points.push({
+      x,
+      regression: Math.round(val * 100) / 100,
+    })
+  }
+
+  return points
+}
