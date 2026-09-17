@@ -197,3 +197,84 @@ export function generateRegressionPoints(
 
   return points
 }
+
+export function getFrontierAtDate(frontier: FrontierPoint[], dateVal: number): number | null {
+  if (frontier.length === 0) return null
+  let score: number | null = null
+  for (const point of frontier) {
+    if (point.dateValue <= dateVal) {
+      score = point.score
+    } else {
+      break
+    }
+  }
+  return score ?? frontier[0].score
+}
+
+export type CombinedChartPoint = {
+  x: number
+  frontier?: number
+  regression?: number
+}
+
+export function buildCombinedChartData(
+  frontier: FrontierPoint[],
+  startDate: string,
+  endDate: string,
+  frontierEndDate?: string,
+): CombinedChartPoint[] {
+  if (frontier.length === 0) return []
+
+  const startVal = dateValue(startDate)
+  const endVal = dateValue(endDate)
+  if (Number.isNaN(startVal) || Number.isNaN(endVal) || startVal >= endVal) return []
+
+  const frontierEndVal = frontierEndDate ? dateValue(frontierEndDate) : endVal
+  const model = fitExponentialRegression(frontier)
+
+  const timestamps = new Set<number>()
+  timestamps.add(startVal)
+  timestamps.add(endVal)
+  if (!Number.isNaN(frontierEndVal) && frontierEndVal >= startVal && frontierEndVal <= endVal) {
+    timestamps.add(frontierEndVal)
+  }
+
+  for (const point of frontier) {
+    if (point.dateValue >= startVal && point.dateValue <= endVal) {
+      timestamps.add(point.dateValue)
+    }
+  }
+
+  const startYear = new Date(`${startDate}T12:00:00`).getFullYear()
+  const endYear = new Date(`${endDate}T12:00:00`).getFullYear()
+
+  for (let year = startYear; year <= endYear; year++) {
+    for (let month = 1; month <= 12; month++) {
+      const monthStr = String(month).padStart(2, '0')
+      for (const day of ['01', '15']) {
+        const val = dateValue(`${year}-${monthStr}-${day}`)
+        if (val >= startVal && val <= endVal) {
+          timestamps.add(val)
+        }
+      }
+    }
+  }
+
+  const sortedTimestamps = Array.from(timestamps).sort((a, b) => a - b)
+
+  return sortedTimestamps.map((x) => {
+    const pt: CombinedChartPoint = { x }
+    if (x <= frontierEndVal) {
+      const fScore = getFrontierAtDate(frontier, x)
+      if (fScore !== null) {
+        pt.frontier = fScore
+      }
+    }
+    if (model) {
+      const val = model.predict(x)
+      pt.regression = Math.round(val * 100) / 100
+    }
+    return pt
+  })
+}
+

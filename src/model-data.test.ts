@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addOneYear,
+  buildCombinedChartData,
   buildFrontierChartData,
   calculateFrontier,
   dateValue,
@@ -9,6 +10,7 @@ import {
   formatDate,
   generateRegressionPoints,
   generateSemesterTicks,
+  getFrontierAtDate,
   getTodayDateString,
   sortVendors,
   type Model,
@@ -193,3 +195,55 @@ describe('generateRegressionPoints', () => {
     expect(points[points.length - 1].regression).toBeGreaterThan(points[0].regression)
   })
 })
+
+describe('getFrontierAtDate', () => {
+  it('returns null when frontier is empty', () => {
+    expect(getFrontierAtDate([], dateValue('2024-01-01'))).toBeNull()
+  })
+
+  it('returns first score if date is before first breakthrough', () => {
+    const frontier = calculateFrontier(models)
+    expect(getFrontierAtDate(frontier, dateValue('2023-12-01'))).toBe(50)
+  })
+
+  it('returns correct score at intermediate and milestone dates', () => {
+    const frontier = calculateFrontier(models)
+    // First milestone at 2024-01-01 (50), second at 2024-03-01 (70)
+    expect(getFrontierAtDate(frontier, dateValue('2024-01-01'))).toBe(50)
+    expect(getFrontierAtDate(frontier, dateValue('2024-02-15'))).toBe(50)
+    expect(getFrontierAtDate(frontier, dateValue('2024-03-01'))).toBe(70)
+    expect(getFrontierAtDate(frontier, dateValue('2025-01-01'))).toBe(70)
+  })
+})
+
+describe('buildCombinedChartData', () => {
+  it('returns empty array when frontier is empty or dates invalid', () => {
+    expect(buildCombinedChartData([], '2024-01-01', '2025-01-01')).toEqual([])
+    const frontier = calculateFrontier(models)
+    expect(buildCombinedChartData(frontier, '2025-01-01', '2024-01-01')).toEqual([])
+  })
+
+  it('combines frontier and regression data over timeline', () => {
+    const frontier = calculateFrontier(models)
+    const data = buildCombinedChartData(frontier, '2024-01-01', '2025-01-01', '2024-06-01')
+    expect(data.length).toBeGreaterThan(0)
+
+    // First point
+    expect(data[0].x).toBe(dateValue('2024-01-01'))
+    expect(data[0].frontier).toBe(50)
+    expect(data[0].regression).toBe(50)
+
+    // Point before frontierEnd (e.g. 2024-03-01 has frontier 70)
+    const marPoint = data.find((p) => p.x === dateValue('2024-03-01'))
+    expect(marPoint).toBeDefined()
+    expect(marPoint?.frontier).toBe(70)
+    expect(marPoint?.regression).toBe(70)
+
+    // Point after frontierEnd (2024-06-01) should have frontier undefined and regression defined
+    const endPoint = data[data.length - 1]
+    expect(endPoint.x).toBe(dateValue('2025-01-01'))
+    expect(endPoint.frontier).toBeUndefined()
+    expect(endPoint.regression).toBeGreaterThan(70)
+  })
+})
+

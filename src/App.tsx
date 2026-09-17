@@ -3,14 +3,17 @@ import { ArrowUpRight, CalendarDays, ChevronDown, Database, LoaderCircle, Moon, 
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from 'recharts'
 import {
   addOneYear,
-  buildFrontierChartData,
+  buildCombinedChartData,
   calculateFrontier,
   dateValue,
+  fitExponentialRegression,
   formatDate,
-  generateRegressionPoints,
   generateSemesterTicks,
+  getFrontierAtDate,
   getTodayDateString,
   sortVendors,
+  type ExponentialRegressionModel,
+  type FrontierPoint,
   type Model,
   type VendorOrder,
 } from './model-data'
@@ -33,11 +36,78 @@ function loadModels(): Promise<DataResponse> {
   return modelsRequest
 }
 
+type CustomTooltipProps = {
+  active?: boolean
+  label?: number | string
+  hoveredModel: Model | null
+  frontier: FrontierPoint[]
+  regressionModel: ExponentialRegressionModel | null
+}
+
+export function CustomChartTooltip({
+  active,
+  label,
+  hoveredModel,
+  frontier,
+  regressionModel,
+}: CustomTooltipProps) {
+  if (!active && !hoveredModel) return null
+
+  if (hoveredModel) {
+    const modelTimestamp = dateValue(hoveredModel.releaseDate)
+    const frontierIndex = getFrontierAtDate(frontier, modelTimestamp)
+
+    return (
+      <div className="custom-tooltip tooltip-data-point" data-testid="data-point-tooltip">
+        <div className="tooltip-vendor" data-testid="model-vendor">{hoveredModel.vendor}</div>
+        <div className="tooltip-name" data-testid="model-name">{hoveredModel.name}</div>
+        <div className="tooltip-row">
+          <span className="tooltip-label">Release date:</span>
+          <span className="tooltip-value" data-testid="model-release-date">{hoveredModel.releaseDate}</span>
+        </div>
+        <div className="tooltip-row">
+          <span className="tooltip-label">Intelligence index:</span>
+          <span className="tooltip-value tooltip-score" data-testid="model-score">{hoveredModel.score}</span>
+        </div>
+        <div className="tooltip-row">
+          <span className="tooltip-label">Frontier index:</span>
+          <span className="tooltip-value tooltip-frontier" data-testid="model-frontier-score">{frontierIndex ?? '—'}</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (label === undefined || label === null) return null
+  const timestamp = Number(label)
+  if (Number.isNaN(timestamp)) return null
+
+  const monthYear = formatDate(timestamp)
+  const frontierValue = getFrontierAtDate(frontier, timestamp)
+  const regressionValue = regressionModel ? Math.round(regressionModel.predict(timestamp) * 100) / 100 : null
+
+  return (
+    <div className="custom-tooltip tooltip-area" data-testid="area-tooltip">
+      <div className="tooltip-month-year" data-testid="tooltip-month-year">{monthYear}</div>
+      <div className="tooltip-row">
+        <span className="tooltip-label">Frontier line:</span>
+        <span className="tooltip-value tooltip-score" data-testid="tooltip-frontier-value">{frontierValue ?? '—'}</span>
+      </div>
+      {regressionValue !== null && (
+        <div className="tooltip-row">
+          <span className="tooltip-label">Exponential regression curve:</span>
+          <span className="tooltip-value tooltip-regression" data-testid="tooltip-regression-value">{regressionValue}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function App() {
   const [data, setData] = useState<DataState>({ status: 'loading', models: [], indexVersion: null, retrievedAt: null, error: null })
   const [allSelected, setAllSelected] = useState(true)
   const [selectedVendors, setSelectedVendors] = useState<string[]>([])
   const [vendorOrder, setVendorOrder] = useState<VendorOrder>('A-Z')
+  const [hoveredModel, setHoveredModel] = useState<Model | null>(null)
   const [darkMode, setDarkMode] = useState(() => {
     try {
       return sessionStorage.getItem('theme') === 'dark'
@@ -76,6 +146,7 @@ function App() {
   const activeVendors = allSelected ? options.vendors : selectedVendors
   const filteredModels = useMemo(() => data.models.filter((model) => activeVendors.includes(model.vendor)), [activeVendors, data.models])
   const frontier = useMemo(() => calculateFrontier(filteredModels), [filteredModels])
+  const regressionModel = useMemo(() => fitExponentialRegression(frontier), [frontier])
   const timelineBounds = useMemo(() => {
     if (filteredModels.length === 0) return { start: undefined, frontierEnd: undefined, axisEnd: undefined }
     const sorted = [...filteredModels].sort((a, b) => a.releaseDate.localeCompare(b.releaseDate))
@@ -89,10 +160,9 @@ function App() {
   const timelineStart = timelineBounds.start
   const frontierEnd = timelineBounds.frontierEnd
   const axisEnd = timelineBounds.axisEnd
-  const chartData = useMemo(() => buildFrontierChartData(frontier, frontierEnd), [frontier, frontierEnd])
-  const regressionData = useMemo(
-    () => (timelineStart && axisEnd ? generateRegressionPoints(frontier, timelineStart, axisEnd) : []),
-    [frontier, timelineStart, axisEnd],
+  const chartData = useMemo(
+    () => (timelineStart && axisEnd ? buildCombinedChartData(frontier, timelineStart, axisEnd, frontierEnd) : []),
+    [frontier, timelineStart, axisEnd, frontierEnd],
   )
   const semesterTicks = useMemo(
     () => (timelineStart && axisEnd ? generateSemesterTicks(timelineStart, axisEnd) : []),
@@ -130,7 +200,7 @@ function App() {
       {data.status === 'error' && <section className="data-message error"><strong>Model data could not be loaded.</strong><span>{data.error}</span><small>The scheduled GitHub data refresh may not have completed yet. Try again after the next deployment.</small></section>}
       {data.status === 'ready' && <>
         <section className="control-bar" aria-label="Chart filters"><div className="filters"><div className="vendor-field" ref={vendorMenuRef}><span className="field-label">Vendor</span><button className="vendor-trigger" type="button" aria-expanded={vendorMenuOpen} onClick={() => setVendorMenuOpen((open) => !open)}>Select vendors<ChevronDown size={15} /></button>{vendorMenuOpen && <div className="vendor-menu" role="group" aria-label="Select vendors"><label className="vendor-option"><input type="checkbox" checked={allSelected} onChange={() => toggleVendor('All')} />All</label>{options.vendors.map((option) => <label className="vendor-option" key={option}><input type="checkbox" checked={allSelected || selectedVendors.includes(option)} onChange={() => toggleVendor(option)} />{option}</label>)}</div>}</div><label>Order vendors by<select value={vendorOrder} onChange={(event) => setVendorOrder(event.target.value as VendorOrder)}>{options.vendorOrders.map((option) => <option key={option}>{option}</option>)}</select></label></div></section>
-        <section className="chart-section"><div className="chart-header"><div><p className="section-kicker">CUMULATIVE FRONTIER</p><h2>Intelligence Index</h2></div><div className="metric"><span>Current high</span><strong>{highest?.score ?? '—'}</strong><small>{highest?.name ?? 'No matching models'}</small></div></div><div className="chart-body"><div className="chart-wrap">{chartData.length > 0 ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chartData} margin={{ top: 10, right: 10, bottom: 5, left: 0 }}><CartesianGrid stroke="var(--chart-grid)" strokeDasharray="2 5" syncWithTicks verticalValues={semesterTicks.length > 0 ? semesterTicks : undefined} /><XAxis type="number" dataKey="x" domain={timelineDomain ?? ['auto', 'auto']} ticks={semesterTicks.length > 0 ? semesterTicks : undefined} axisLine={false} tickLine={false} tickFormatter={(value: number) => formatDate(value)} tick={{ fill: 'var(--muted-text)', fontSize: 12 }} dy={6} /><YAxis domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} axisLine={false} tickLine={false} tick={{ fill: 'var(--muted-text)', fontSize: 12 }} width={34} /><Tooltip labelFormatter={(value) => formatDate(Number(value))} />{regressionData.length > 0 && <Line data={regressionData} type="monotone" dataKey="regression" name="Exponential fit" stroke="var(--regression-line)" strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} />}<Line type="stepAfter" dataKey="frontier" name="Frontier" stroke="var(--frontier-line)" strokeWidth={2} dot={false} activeDot={false} />{vendorPoints.map((series) => <Scatter key={series.vendor} name={series.vendor} data={series.data} dataKey="y" xAxisId={0} yAxisId={0} fill={series.color} line={false} shape={<circle r={2} />} />)}</LineChart></ResponsiveContainer> : <div className="empty-state">No models match these filters.</div>}</div><div className="vendor-legend">{vendorPoints.map((series) => <span key={series.vendor}><i className="legend-swatch" style={{ backgroundColor: series.color }} />{series.vendor}</span>)}</div></div><div className="chart-foot"><span><CalendarDays size={14} /> {timelineStart ? `${formatDate(timelineStart)} – ${formatDate(axisEnd ?? timelineStart)}` : 'No timeline'}</span><span><Database size={14} /> {filteredModels.length} models in view</span></div></section>
+        <section className="chart-section"><div className="chart-header"><div><p className="section-kicker">CUMULATIVE FRONTIER</p><h2>Intelligence Index</h2></div><div className="metric"><span>Current high</span><strong>{highest?.score ?? '—'}</strong><small>{highest?.name ?? 'No matching models'}</small></div></div><div className="chart-body"><div className="chart-wrap" onMouseLeave={() => setHoveredModel(null)}>{chartData.length > 0 ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chartData} margin={{ top: 10, right: 10, bottom: 5, left: 0 }} onMouseLeave={() => setHoveredModel(null)}><CartesianGrid stroke="var(--chart-grid)" strokeDasharray="2 5" syncWithTicks verticalValues={semesterTicks.length > 0 ? semesterTicks : undefined} /><XAxis type="number" dataKey="x" domain={timelineDomain ?? ['auto', 'auto']} ticks={semesterTicks.length > 0 ? semesterTicks : undefined} axisLine={false} tickLine={false} tickFormatter={(value: number) => formatDate(value)} tick={{ fill: 'var(--muted-text)', fontSize: 12 }} dy={6} /><YAxis domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} axisLine={false} tickLine={false} tick={{ fill: 'var(--muted-text)', fontSize: 12 }} width={34} /><Tooltip cursor={hoveredModel ? false : { stroke: 'var(--chart-grid)', strokeDasharray: '2 5' }} content={(props) => <CustomChartTooltip {...props} hoveredModel={hoveredModel} frontier={frontier} regressionModel={regressionModel} />} />{regressionModel && <Line type="monotone" dataKey="regression" name="Exponential fit" stroke="var(--regression-line)" strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} />}<Line type="stepAfter" dataKey="frontier" name="Frontier" stroke="var(--frontier-line)" strokeWidth={2} dot={false} activeDot={false} />{vendorPoints.map((series) => <Scatter key={series.vendor} name={series.vendor} data={series.data} dataKey="y" xAxisId={0} yAxisId={0} fill={series.color} line={false} shape={(props: any) => { const { cx, cy, fill, payload } = props; const isHovered = hoveredModel?.name === payload.name && hoveredModel?.vendor === payload.vendor; return <g className="scatter-point-hit-group" style={{ cursor: 'pointer' }} onMouseEnter={() => setHoveredModel(payload)} onMouseLeave={() => setHoveredModel(null)}><circle cx={cx} cy={cy} r={8} fill="transparent" /><circle cx={cx} cy={cy} r={isHovered ? 4 : 2} fill={fill} stroke={isHovered ? 'var(--text)' : undefined} strokeWidth={isHovered ? 1.5 : undefined} /></g> }} />)}</LineChart></ResponsiveContainer> : <div className="empty-state">No models match these filters.</div>}</div><div className="vendor-legend">{vendorPoints.map((series) => <span key={series.vendor}><i className="legend-swatch" style={{ backgroundColor: series.color }} />{series.vendor}</span>)}</div></div><div className="chart-foot"><span><CalendarDays size={14} /> {timelineStart ? `${formatDate(timelineStart)} – ${formatDate(axisEnd ?? timelineStart)}` : 'No timeline'}</span><span><Database size={14} /> {filteredModels.length} models in view</span></div></section>
         <section className="frontier-list"><div><p className="section-kicker">MILESTONES</p><h2>Frontier breakthroughs</h2></div><div className="milestones" aria-label="All frontier breakthroughs">{[...frontier].reverse().map((model) => <article key={model.name}><span className="milestone-score">{model.score}</span><div><strong>{model.name}</strong><p>{model.vendor} · {model.date}</p></div></article>)}</div></section>
       </>}
       <footer><a className="source-citation" href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noreferrer"><span className="source-label">Data provided by</span><img className="source-logo" src={darkMode ? './artificial-analysis-logo-white.svg' : './artificial-analysis-logo-black.svg'} alt="Artificial Analysis" /><ArrowUpRight size={14} /></a><span>{data.retrievedAt ? `Retrieved ${new Date(data.retrievedAt).toLocaleString()}` : 'Data is loaded once per page load; nothing is stored in the browser.'}</span></footer>
