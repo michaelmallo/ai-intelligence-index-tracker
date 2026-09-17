@@ -6,7 +6,9 @@ import {
   dateValue,
   filterModels,
   fitExponentialRegression,
+  formatDate,
   generateRegressionPoints,
+  generateSemesterTicks,
   getTodayDateString,
   sortVendors,
   type Model,
@@ -76,6 +78,44 @@ describe('dateValue', () => {
     expect(dateValue('2024-01-01')).toBeLessThan(dateValue('2024-02-01'))
   })
 })
+
+describe('formatDate', () => {
+  it('formats date strings into short month and year', () => {
+    expect(formatDate('2024-01-01')).toBe('Jan 2024')
+    expect(formatDate('2024-07-01')).toBe('Jul 2024')
+  })
+
+  it('formats timestamps into short month and year', () => {
+    expect(formatDate(dateValue('2024-01-01'))).toBe('Jan 2024')
+    expect(formatDate(dateValue('2024-07-01'))).toBe('Jul 2024')
+  })
+})
+
+describe('generateSemesterTicks', () => {
+  it('returns empty array when startDate is after endDate or inputs are invalid', () => {
+    expect(generateSemesterTicks('2025-01-01', '2024-01-01')).toEqual([])
+    expect(generateSemesterTicks('invalid', '2024-01-01')).toEqual([])
+  })
+
+  it('generates ticks for January 1st and July 1st of each calendar semester within range', () => {
+    const ticks = generateSemesterTicks('2024-05-13', '2026-03-01')
+    expect(ticks).toEqual([
+      dateValue('2024-07-01'),
+      dateValue('2025-01-01'),
+      dateValue('2025-07-01'),
+      dateValue('2026-01-01'),
+    ])
+  })
+
+  it('includes boundary dates if they land exactly on semester beginnings', () => {
+    const ticks = generateSemesterTicks('2024-01-01', '2024-07-01')
+    expect(ticks).toEqual([
+      dateValue('2024-01-01'),
+      dateValue('2024-07-01'),
+    ])
+  })
+})
+
 
 describe('sortVendors', () => {
   it('sorts vendors alphabetically in both directions', () => {
