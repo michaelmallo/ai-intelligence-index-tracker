@@ -17,6 +17,14 @@ import {
   type Model,
   type VendorOrder,
 } from './model-data'
+import {
+  loadSelectedVendorsPreference,
+  loadThemePreference,
+  loadVendorOrderPreference,
+  saveSelectedVendorsPreference,
+  saveThemePreference,
+  saveVendorOrderPreference,
+} from './preferences'
 import './App.css'
 
 const vendorColors = ['#ef6351', '#238b8b', '#d19a35', '#6b5b95', '#4d7ea8', '#b05f78', '#5f8d4e', '#9c6644']
@@ -104,17 +112,11 @@ export function CustomChartTooltip({
 
 function App() {
   const [data, setData] = useState<DataState>({ status: 'loading', models: [], indexVersion: null, retrievedAt: null, error: null })
-  const [allSelected, setAllSelected] = useState(true)
-  const [selectedVendors, setSelectedVendors] = useState<string[]>([])
-  const [vendorOrder, setVendorOrder] = useState<VendorOrder>('A-Z')
+  const [allSelected, setAllSelected] = useState(() => loadSelectedVendorsPreference().allSelected)
+  const [selectedVendors, setSelectedVendors] = useState<string[]>(() => loadSelectedVendorsPreference().selectedVendors)
+  const [vendorOrder, setVendorOrder] = useState<VendorOrder>(() => loadVendorOrderPreference())
   const [hoveredModel, setHoveredModel] = useState<Model | null>(null)
-  const [darkMode, setDarkMode] = useState(() => {
-    try {
-      return sessionStorage.getItem('theme') === 'dark'
-    } catch {
-      return false
-    }
-  })
+  const [darkMode, setDarkMode] = useState(() => loadThemePreference())
   const [vendorMenuOpen, setVendorMenuOpen] = useState(false)
   const vendorMenuRef = useRef<HTMLDivElement>(null)
 
@@ -132,18 +134,26 @@ function App() {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark-mode', darkMode)
-    try {
-      sessionStorage.setItem('theme', darkMode ? 'dark' : 'light')
-    } catch {
-    }
+    saveThemePreference(darkMode)
     return () => document.documentElement.classList.remove('dark-mode')
   }, [darkMode])
+
+  useEffect(() => {
+    saveVendorOrderPreference(vendorOrder)
+  }, [vendorOrder])
+
+  useEffect(() => {
+    saveSelectedVendorsPreference(allSelected, selectedVendors)
+  }, [allSelected, selectedVendors])
 
   const options = useMemo(() => ({
     vendors: sortVendors(data.models, vendorOrder),
     vendorOrders: ['A-Z', 'Z-A', 'Current Best Index (decreasing)', 'Current Best Index (increasing)'] as VendorOrder[],
   }), [data.models, vendorOrder])
-  const activeVendors = allSelected ? options.vendors : selectedVendors
+  const activeVendors = useMemo(() => {
+    if (allSelected) return options.vendors
+    return selectedVendors.filter((vendor) => options.vendors.includes(vendor))
+  }, [allSelected, options.vendors, selectedVendors])
   const filteredModels = useMemo(() => data.models.filter((model) => activeVendors.includes(model.vendor)), [activeVendors, data.models])
   const frontier = useMemo(() => calculateFrontier(filteredModels), [filteredModels])
   const regressionModel = useMemo(() => fitExponentialRegression(frontier), [frontier])
@@ -180,9 +190,10 @@ function App() {
       return
     }
     setSelectedVendors((current) => {
+      const validCurrent = current.filter((item) => options.vendors.includes(item))
       const next = allSelected
         ? options.vendors.filter((item) => item !== vendor)
-        : current.includes(vendor) ? current.filter((item) => item !== vendor) : [...current, vendor]
+        : validCurrent.includes(vendor) ? validCurrent.filter((item) => item !== vendor) : [...validCurrent, vendor]
       if (next.length === options.vendors.length) {
         setAllSelected(true)
         return []
