@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { ArrowUpRight, CalendarDays, ChevronDown, Database, LoaderCircle, Moon, Sun } from 'lucide-react'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from 'recharts'
 import {
@@ -132,11 +133,54 @@ function App() {
     return () => document.removeEventListener('mousedown', closeMenu)
   }, [])
 
-  useEffect(() => {
+  const transitionTimeoutRef = useRef<number | null>(null)
+
+  useLayoutEffect(() => {
     document.documentElement.classList.toggle('dark-mode', darkMode)
-    saveThemePreference(darkMode)
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]')
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute('content', darkMode ? '#0d1117' : '#f8f7f2')
+    }
     return () => document.documentElement.classList.remove('dark-mode')
   }, [darkMode])
+
+  useEffect(() => {
+    saveThemePreference(darkMode)
+  }, [darkMode])
+
+  useEffect(() => {
+    return () => {
+      if (transitionTimeoutRef.current !== null) {
+        window.clearTimeout(transitionTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const handleToggleTheme = () => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      setDarkMode((current) => !current)
+      return
+    }
+
+    if (document.startViewTransition) {
+      document.startViewTransition(() => {
+        flushSync(() => {
+          setDarkMode((current) => !current)
+        })
+      })
+      return
+    }
+
+    if (transitionTimeoutRef.current !== null) {
+      window.clearTimeout(transitionTimeoutRef.current)
+    }
+    document.documentElement.classList.add('theme-transitioning')
+    setDarkMode((current) => !current)
+    transitionTimeoutRef.current = window.setTimeout(() => {
+      document.documentElement.classList.remove('theme-transitioning')
+      transitionTimeoutRef.current = null
+    }, 500)
+  }
 
   useEffect(() => {
     saveVendorOrderPreference(vendorOrder)
@@ -205,7 +249,7 @@ function App() {
 
   return (
     <main className={`app-shell${darkMode ? ' dark-mode' : ''}`}>
-      <button className="theme-toggle" type="button" aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={() => setDarkMode((current) => !current)}>{darkMode ? <Sun size={16} /> : <Moon size={16} />}</button>
+      <button className="theme-toggle" type="button" aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={handleToggleTheme}>{darkMode ? <Sun size={16} /> : <Moon size={16} />}</button>
       <section className="intro"><p className="eyebrow">MODEL FRONTIER {data.indexVersion ? `/ INDEX V${data.indexVersion}` : ''}</p><h1>How fast is the frontier moving?</h1><p className="lede">A living view of the highest intelligence index score reached over time.</p></section>
       {data.status === 'loading' && <section className="data-message"><LoaderCircle className="spinner" size={20} /><span>Loading the latest model data...</span></section>}
       {data.status === 'error' && <section className="data-message error"><strong>Model data could not be loaded.</strong><span>{data.error}</span><small>The scheduled GitHub data refresh may not have completed yet. Try again after the next deployment.</small></section>}
@@ -214,7 +258,7 @@ function App() {
         <section className="chart-section"><div className="chart-header"><div><p className="section-kicker">CUMULATIVE FRONTIER</p><h2>Intelligence Index</h2></div><div className="metric"><span>Current high</span><strong>{highest?.score ?? '—'}</strong><small>{highest?.name ?? 'No matching models'}</small></div></div><div className="chart-body"><div className="chart-wrap" onMouseLeave={() => setHoveredModel(null)}>{chartData.length > 0 ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chartData} margin={{ top: 10, right: 10, bottom: 5, left: 0 }} onMouseLeave={() => setHoveredModel(null)}><CartesianGrid stroke="var(--chart-grid)" strokeDasharray="2 5" syncWithTicks verticalValues={semesterTicks.length > 0 ? semesterTicks : undefined} /><XAxis type="number" dataKey="x" domain={timelineDomain ?? ['auto', 'auto']} ticks={semesterTicks.length > 0 ? semesterTicks : undefined} axisLine={false} tickLine={false} tickFormatter={(value: number) => formatDate(value)} tick={{ fill: 'var(--muted-text)', fontSize: 12 }} dy={6} /><YAxis domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} axisLine={false} tickLine={false} tick={{ fill: 'var(--muted-text)', fontSize: 12 }} width={34} /><Tooltip cursor={hoveredModel ? false : { stroke: 'var(--chart-grid)', strokeDasharray: '2 5' }} content={(props) => <CustomChartTooltip {...props} hoveredModel={hoveredModel} frontier={frontier} regressionModel={regressionModel} />} />{regressionModel && <Line type="monotone" dataKey="regression" name="Exponential fit" stroke="var(--regression-line)" strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} />}<Line type="stepAfter" dataKey="frontier" name="Frontier" stroke="var(--frontier-line)" strokeWidth={2} dot={false} activeDot={false} />{vendorPoints.map((series) => <Scatter key={series.vendor} name={series.vendor} data={series.data} dataKey="y" xAxisId={0} yAxisId={0} fill={series.color} line={false} shape={(props: any) => { const { cx, cy, fill, payload } = props; const isHovered = hoveredModel?.name === payload.name && hoveredModel?.vendor === payload.vendor; return <g className="scatter-point-hit-group" style={{ cursor: 'pointer' }} onMouseEnter={() => setHoveredModel(payload)} onMouseLeave={() => setHoveredModel(null)}><circle cx={cx} cy={cy} r={8} fill="transparent" /><circle cx={cx} cy={cy} r={isHovered ? 4 : 2} fill={fill} stroke={isHovered ? 'var(--text)' : undefined} strokeWidth={isHovered ? 1.5 : undefined} /></g> }} />)}</LineChart></ResponsiveContainer> : <div className="empty-state">No models match these filters.</div>}</div><div className="vendor-legend">{vendorPoints.map((series) => <span key={series.vendor}><i className="legend-swatch" style={{ backgroundColor: series.color }} />{series.vendor}</span>)}</div></div><div className="chart-foot"><span><CalendarDays size={14} /> {timelineStart ? `${formatDate(timelineStart)} – ${formatDate(axisEnd ?? timelineStart)}` : 'No timeline'}</span><span><Database size={14} /> {filteredModels.length} models in view</span></div></section>
         <section className="frontier-list"><div><p className="section-kicker">MILESTONES</p><h2>Frontier breakthroughs</h2></div><div className="milestones" aria-label="All frontier breakthroughs">{[...frontier].reverse().map((model) => <article key={model.name}><span className="milestone-score">{model.score}</span><div><strong>{model.name}</strong><p>{model.vendor} · {model.date}</p></div></article>)}</div></section>
       </>}
-      <footer><a className="source-citation" href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noreferrer"><span className="source-label">Data provided by</span><img className="source-logo" src={darkMode ? './artificial-analysis-logo-white.svg' : './artificial-analysis-logo-black.svg'} alt="Artificial Analysis" /><ArrowUpRight size={14} /></a><span>{data.retrievedAt ? `Retrieved ${new Date(data.retrievedAt).toLocaleString()}` : 'Data is loaded once per page load; nothing is stored in the browser.'}</span></footer>
+      <footer><a className="source-citation" href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noreferrer"><span className="source-label">Data provided by</span><img className="source-logo" src="./artificial-analysis-logo-black.svg" alt="Artificial Analysis" /><ArrowUpRight size={14} /></a><span>{data.retrievedAt ? `Retrieved ${new Date(data.retrievedAt).toLocaleString()}` : 'Data is loaded once per page load; nothing is stored in the browser.'}</span></footer>
     </main>
   )
 }
