@@ -4,6 +4,8 @@ import {
   buildCombinedChartData,
   buildFrontierChartData,
   calculateFrontier,
+  calculateProjectionEndDate,
+  calculateTimelineBounds,
   dateValue,
   filterModels,
   fitExponentialRegression,
@@ -11,6 +13,7 @@ import {
   generateRegressionPoints,
   generateSemesterTicks,
   getFrontierAtDate,
+  getProjectedScore100Date,
   getTodayDateString,
   sortVendors,
   type Model,
@@ -172,6 +175,17 @@ describe('fitExponentialRegression', () => {
     expect(Math.round(predEnd)).toBe(70)
     expect(predFuture).toBeGreaterThan(70)
   })
+
+  it('calculates date when projected score reaches 100', () => {
+    const frontier = calculateFrontier(models)
+    const date100 = getProjectedScore100Date(frontier)
+    expect(date100).not.toBeNull()
+    if (!date100) return
+    const model = fitExponentialRegression(frontier)!
+    // On this date, the score reaches ~100
+    const val = model.predict(dateValue(date100))
+    expect(Math.round(val)).toBe(100)
+  })
 })
 
 describe('generateRegressionPoints', () => {
@@ -225,7 +239,7 @@ describe('buildCombinedChartData', () => {
 
   it('combines frontier and regression data over timeline', () => {
     const frontier = calculateFrontier(models)
-    const data = buildCombinedChartData(frontier, '2024-01-01', '2025-01-01', '2024-06-01')
+    const data = buildCombinedChartData(frontier, '2024-01-01', '2024-04-15', '2024-02-15')
     expect(data.length).toBeGreaterThan(0)
 
     // First point
@@ -233,17 +247,149 @@ describe('buildCombinedChartData', () => {
     expect(data[0].frontier).toBe(50)
     expect(data[0].regression).toBe(50)
 
-    // Point before frontierEnd (e.g. 2024-03-01 has frontier 70)
-    const marPoint = data.find((p) => p.x === dateValue('2024-03-01'))
-    expect(marPoint).toBeDefined()
-    expect(marPoint?.frontier).toBe(70)
-    expect(marPoint?.regression).toBe(70)
+    // Point before frontierEnd (e.g. 2024-01-15 has frontier 50)
+    const midPoint = data.find((p) => p.x === dateValue('2024-01-15'))
+    expect(midPoint).toBeDefined()
+    expect(midPoint?.frontier).toBe(50)
 
-    // Point after frontierEnd (2024-06-01) should have frontier undefined and regression defined
-    const endPoint = data[data.length - 1]
-    expect(endPoint.x).toBe(dateValue('2025-01-01'))
-    expect(endPoint.frontier).toBeUndefined()
-    expect(endPoint.regression).toBeGreaterThan(70)
+    // Point after frontierEnd (2024-02-15) but before score reaches 100 should have frontier undefined and regression defined
+    const postFrontierPoint = data.find((p) => p.x === dateValue('2024-04-01'))
+    expect(postFrontierPoint).toBeDefined()
+    expect(postFrontierPoint?.frontier).toBeUndefined()
+    expect(postFrontierPoint?.regression).toBeGreaterThan(70)
+    expect(postFrontierPoint?.regression).toBeLessThanOrEqual(100)
+  })
+
+  it('stops projecting regression data beyond the date score reaches 100 and caps at 100', () => {
+    const frontier = calculateFrontier(models)
+    const score100Date = getProjectedScore100Date(frontier)!
+    expect(score100Date).toBeDefined()
+
+    // Pass a future endDate well beyond score100Date
+    const data = buildCombinedChartData(frontier, '2024-01-01', '2025-01-01')
+
+    // All points on or before score100Date must not exceed 100
+    for (const pt of data) {
+      if (pt.x <= dateValue(score100Date) && pt.regression !== undefined) {
+        expect(pt.regression).toBeLessThanOrEqual(100)
+      }
+    }
+
+    // Point at score100Date reaches 100
+    const pointAt100 = data.find((p) => p.x === dateValue(score100Date))
+    expect(pointAt100?.regression).toBe(100)
+
+    // Points strictly after score100Date must not project regression
+    const pointAfter100 = data.find((p) => p.x === dateValue('2025-01-01'))
+    expect(pointAfter100).toBeDefined()
+    expect(pointAfter100?.regression).toBeUndefined()
   })
 })
+
+describe('calculateProjectionEndDate', () => {
+  it('returns the score 100 date when it is later than the latest actual data', () => {
+    const frontier = calculateFrontier(models)
+    const score100Date = getProjectedScore100Date(frontier)!
+    // models latest is 2024-04-01, score100Date is in May 2024
+    const result = calculateProjectionEndDate(frontier, '2024-04-01')
+    expect(result).toBe(score100Date)
+    expect(result.localeCompare('2024-04-01')).toBeGreaterThan(0)
+  })
+
+  it('returns the latest actual data date when it is later than the date score reaches 100', () => {
+    const frontier = calculateFrontier(models)
+    const result = calculateProjectionEndDate(frontier, '2024-08-01')
+    expect(result).toBe('2024-08-01')
+  })
+
+  it('returns the latest actual data date when projection is not possible', () => {
+    expect(calculateProjectionEndDate([], '2024-05-01')).toBe('2024-05-01')
+  })
+})
+
+describe('calculateTimelineBounds', () => {
+  it('returns undefined bounds when filtered models are empty', () => {
+    expect(calculateTimelineBounds([])).toEqual({
+      start: undefined,
+      frontierEnd: undefined,
+      axisEnd: undefined,
+    })
+  })
+
+  it('stops projecting axisEnd at the date score reaches 100 when later than latest model', () => {
+    const bounds = calculateTimelineBounds(models, '2024-03-01')
+    const frontier = calculateFrontier(models)
+    const score100Date = getProjectedScore100Date(frontier)!
+    expect(bounds.start).toBe('2024-01-01')
+    expect(bounds.axisEnd).toBe(score100Date)
+    expect(bounds.frontierEnd).toBe('2024-04-01')
+  })
+
+  it('stops projecting axisEnd at latest actual data when actual data is later than score 100 date', () => {
+    const modelsWithLateData: Model[] = [
+      { vendor: 'A', name: 'early hit', score: 99, releaseDate: '2024-01-01' },
+      { vendor: 'A', name: 'hits 100', score: 100, releaseDate: '2024-02-01' },
+      { vendor: 'A', name: 'late actual model', score: 100, releaseDate: '2024-08-01' },
+    ]
+    const bounds = calculateTimelineBounds(modelsWithLateData, '2024-08-01')
+    expect(bounds.axisEnd).toBe('2024-08-01')
+  })
+})
+
+describe('CustomChartTooltip', () => {
+  it('displays projection value on or before the score 100 date without exceeding 100', async () => {
+    const { renderToString } = await import('react-dom/server')
+    const { CustomChartTooltip } = await import('./App')
+    const frontier = calculateFrontier(models)
+    const regressionModel = fitExponentialRegression(frontier)
+    const score100Date = getProjectedScore100Date(frontier)!
+
+    // Tooltip on date before 100
+    const htmlBefore = renderToString(
+      CustomChartTooltip({
+        active: true,
+        label: dateValue('2024-03-01'),
+        hoveredModel: null,
+        frontier,
+        regressionModel,
+      })
+    )
+    expect(htmlBefore).toContain('Projection:')
+    expect(htmlBefore).toContain('70')
+
+    // Tooltip on score 100 date
+    const htmlAt100 = renderToString(
+      CustomChartTooltip({
+        active: true,
+        label: dateValue(score100Date),
+        hoveredModel: null,
+        frontier,
+        regressionModel,
+      })
+    )
+    expect(htmlAt100).toContain('Projection:')
+    expect(htmlAt100).toContain('100')
+  })
+
+  it('does not display projection when timestamp is past the score 100 date', async () => {
+    const { renderToString } = await import('react-dom/server')
+    const { CustomChartTooltip } = await import('./App')
+    const frontier = calculateFrontier(models)
+    const regressionModel = fitExponentialRegression(frontier)
+
+    // Tooltip on date far past score 100 date (e.g. 2025-01-01)
+    const htmlAfter = renderToString(
+      CustomChartTooltip({
+        active: true,
+        label: dateValue('2025-01-01'),
+        hoveredModel: null,
+        frontier,
+        regressionModel,
+      })
+    )
+    expect(htmlAfter).toContain('Frontier line:')
+    expect(htmlAfter).not.toContain('Projection:')
+  })
+})
+
 

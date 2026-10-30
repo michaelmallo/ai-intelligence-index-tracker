@@ -217,6 +217,69 @@ export type CombinedChartPoint = {
   regression?: number
 }
 
+export function timestampToDateString(timestamp: number): string {
+  const date = new Date(timestamp)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function getProjectedScore100Date(frontier: FrontierPoint[]): string | null {
+  const validPoints = frontier.filter((p) => p.score > 0)
+  if (validPoints.length < 2) return null
+
+  const model = fitExponentialRegression(frontier)
+  if (!model || model.b <= 0) return null
+
+  const x0 = validPoints[0].dateValue
+  const alpha = Math.log(model.a)
+  const t = (Math.log(100) - alpha) / model.b
+  const targetDateVal = x0 + t * MS_PER_DAY
+
+  return timestampToDateString(targetDateVal)
+}
+
+export function calculateProjectionEndDate(
+  frontier: FrontierPoint[],
+  latestActualDate: string,
+): string {
+  const score100Date = getProjectedScore100Date(frontier)
+  if (!score100Date) return latestActualDate
+  return score100Date.localeCompare(latestActualDate) > 0 ? score100Date : latestActualDate
+}
+
+export function calculateTimelineBounds(
+  filteredModels: Model[],
+  today: string = getTodayDateString(),
+): { start?: string; frontierEnd?: string; axisEnd?: string } {
+  if (filteredModels.length === 0) {
+    return { start: undefined, frontierEnd: undefined, axisEnd: undefined }
+  }
+
+  const sorted = [...filteredModels].sort((a, b) => a.releaseDate.localeCompare(b.releaseDate))
+  const start = sorted[0]?.releaseDate
+  const latest = sorted.at(-1)?.releaseDate
+  if (!start || !latest) {
+    return { start: undefined, frontierEnd: undefined, axisEnd: undefined }
+  }
+
+  const frontier = calculateFrontier(filteredModels)
+  const score100Date = getProjectedScore100Date(frontier)
+
+  let axisEnd: string
+  if (score100Date) {
+    axisEnd = score100Date.localeCompare(latest) > 0 ? score100Date : latest
+  } else {
+    axisEnd = today.localeCompare(latest) > 0 ? today : latest
+  }
+
+  const rawFrontierEnd = today.localeCompare(latest) > 0 ? today : latest
+  const frontierEnd = rawFrontierEnd.localeCompare(axisEnd) > 0 ? axisEnd : rawFrontierEnd
+
+  return { start, frontierEnd, axisEnd }
+}
+
 export function buildCombinedChartData(
   frontier: FrontierPoint[],
   startDate: string,
@@ -231,12 +294,17 @@ export function buildCombinedChartData(
 
   const frontierEndVal = frontierEndDate ? dateValue(frontierEndDate) : endVal
   const model = fitExponentialRegression(frontier)
+  const score100Date = getProjectedScore100Date(frontier)
+  const score100Val = score100Date ? dateValue(score100Date) : null
 
   const timestamps = new Set<number>()
   timestamps.add(startVal)
   timestamps.add(endVal)
   if (!Number.isNaN(frontierEndVal) && frontierEndVal >= startVal && frontierEndVal <= endVal) {
     timestamps.add(frontierEndVal)
+  }
+  if (score100Val !== null && !Number.isNaN(score100Val) && score100Val >= startVal && score100Val <= endVal) {
+    timestamps.add(score100Val)
   }
 
   for (const point of frontier) {
@@ -271,8 +339,10 @@ export function buildCombinedChartData(
       }
     }
     if (model) {
-      const val = model.predict(x)
-      pt.regression = Math.round(val * 100) / 100
+      if (score100Val === null || x <= score100Val) {
+        const val = model.predict(x)
+        pt.regression = Math.min(100, Math.round(val * 100) / 100)
+      }
     }
     return pt
   })
